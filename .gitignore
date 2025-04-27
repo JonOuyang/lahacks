@@ -31,3 +31,5 @@ token.json
 
 # Pycache
 */__pycache__/*
+__pycache__
+teleBot/__pycache__

@@ -7,6 +7,8 @@ from aiogram.types import FSInputFile
 from backend import send_to_backend
 from stt import transcribe_audio_with_elevenlabs
 import random
+from groq import Groq
+import soundfile as sf
 
 ROBOT_REPLIES = [
     "Got it! What would you like me to do next?",
@@ -31,45 +33,28 @@ ROBOT_REPLIES = [
     "Let's do it! What's your next step?"
 ]
 
-# Make sure your folders exist
+# Load Groq API key
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# Ensure folders exist
 os.makedirs("temp_audio", exist_ok=True)
 os.makedirs("temp_images", exist_ok=True)
 
-# Function: Generate ElevenLabs voice from text (MP3)
-async def synthesize_text_elevenlabs(text: str, filename: str = "temp_audio/generated.mp3"):
-    api_key = os.getenv("ELEVENLABS_API_KEY")
-    url = os.getenv("ELEVENLABS_URL")
+# Function: Generate Groq voice from text (WAV)
+async def synthesize_text_groq(text: str, filename: str = "temp_audio/generated.wav"):
+    with client.audio.speech.with_streaming_response.create(
+        model="playai-tts",
+        voice="Nia-PlayAI",  # or change voice if you want
+        response_format="wav",
+        input=text,
+    ) as response:
+        response.stream_to_file(filename)
 
-    headers = {
-        "xi-api-key": api_key,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "text": text,
-        "model_id": "eleven_monolingual_v1"
-    }
-
-    print(f"ELEVENLABS_URL = {url}")
-    print(f"ELEVENLABS_API_KEY = {api_key}")
-
-    timeout = aiohttp.ClientTimeout(total=10)
-
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            print(f"Status: {resp.status}")
-            if resp.status == 200:
-                with open(filename, "wb") as f:
-                    f.write(await resp.read())
-            else:
-                error_text = await resp.text()
-                print(f"ElevenLabs Error: {error_text}")
-                raise Exception(f"ElevenLabs TTS failed: {error_text}")
-
-# Function: Convert MP3 to OGG
-def convert_mp3_to_ogg(mp3_path: str, ogg_path: str):
+# Function: Convert WAV to OGG
+def convert_wav_to_ogg(wav_path: str, ogg_path: str):
     (
         ffmpeg
-        .input(mp3_path)
+        .input(wav_path)
         .output(
             ogg_path,
             format='ogg',
@@ -77,7 +62,7 @@ def convert_mp3_to_ogg(mp3_path: str, ogg_path: str):
             ar='48000',  # Sample rate: 48000Hz
             ac='1',      # Channels: mono
             audio_bitrate='64k',
-            compression_level='10'  # highest compression for voice
+            compression_level='10'
         )
         .overwrite_output()
         .run(quiet=True)
@@ -85,8 +70,6 @@ def convert_mp3_to_ogg(mp3_path: str, ogg_path: str):
 
 # Function: Send an OGG voice file
 async def reply_with_voice(message: types.Message, bot: Bot, file_path: str):
-
-    print ("Voice sent!")
     await bot.send_chat_action(chat_id=message.chat.id, action="upload_voice")
 
     voice_file = FSInputFile(file_path, filename=os.path.basename(file_path))
@@ -108,22 +91,22 @@ async def handle_text(message: types.Message, bot: Bot):
         "user_id": message.from_user.id,
     })
 
-    temp_mp3 = f"temp_audio/{message.message_id}_generated.mp3"
+    temp_wav = f"temp_audio/{message.message_id}_generated.wav"
     temp_ogg = f"temp_audio/{message.message_id}_generated.ogg"
 
     try:
         robot_text = random.choice(ROBOT_REPLIES)
 
-        await synthesize_text_elevenlabs(robot_text, filename=temp_mp3)
-        convert_mp3_to_ogg(temp_mp3, temp_ogg)
+        await synthesize_text_groq(robot_text, filename=temp_wav)
+        convert_wav_to_ogg(temp_wav, temp_ogg)
         await reply_with_voice(message, bot, temp_ogg)
     except Exception as e:
         print(f"Exception caught: {str(e)}")
         await message.answer(f"Error: {str(e)}")
     finally:
         await asyncio.sleep(0.5)
-        if os.path.exists(temp_mp3):
-            os.remove(temp_mp3)
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
         if os.path.exists(temp_ogg):
             os.remove(temp_ogg)
 
@@ -144,20 +127,20 @@ async def handle_photo(message: types.Message, bot: Bot):
         "user_id": message.from_user.id,
     })
 
-    temp_mp3 = f"temp_audio/{message.message_id}_generated.mp3"
+    temp_wav = f"temp_audio/{message.message_id}_generated.wav"
     temp_ogg = f"temp_audio/{message.message_id}_generated.ogg"
 
     try:
         robot_text = random.choice(ROBOT_REPLIES)
 
-        await synthesize_text_elevenlabs(robot_text, filename=temp_mp3)
-        convert_mp3_to_ogg(temp_mp3, temp_ogg)
+        await synthesize_text_groq(robot_text, filename=temp_wav)
+        convert_wav_to_ogg(temp_wav, temp_ogg)
         await reply_with_voice(message, bot, temp_ogg)
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
-        if os.path.exists(temp_mp3):
-            os.remove(temp_mp3)
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
         if os.path.exists(temp_ogg):
             os.remove(temp_ogg)
 
@@ -172,7 +155,7 @@ async def handle_audio(message: types.Message, bot: Bot):
     await bot.send_chat_action(chat_id=message.chat.id, action="typing")
     await asyncio.sleep(1.5)
 
-    temp_mp3 = f"temp_audio/{message.message_id}_generated.mp3"
+    temp_wav = f"temp_audio/{message.message_id}_generated.wav"
     temp_ogg = f"temp_audio/{message.message_id}_generated.ogg"
 
     transcription = await transcribe_audio_with_elevenlabs(file_path)
@@ -187,15 +170,16 @@ async def handle_audio(message: types.Message, bot: Bot):
         await message.answer(f"Here’s what I heard: \"{transcription}\"")
         
         robot_text = random.choice(ROBOT_REPLIES)
-        await synthesize_text_elevenlabs(robot_text, filename=temp_mp3)
-        convert_mp3_to_ogg(temp_mp3, temp_ogg)
+
+        await synthesize_text_groq(robot_text, filename=temp_wav)
+        convert_wav_to_ogg(temp_wav, temp_ogg)
         await reply_with_voice(message, bot, temp_ogg)
     except Exception as e:
-        await message.answer(f"Oops, something went wrong while transcribing: {str(e)}")
+        await message.answer(f"Oops, something went wrong: {str(e)}")
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
-        if os.path.exists(temp_mp3):
-            os.remove(temp_mp3)
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
         if os.path.exists(temp_ogg):
             os.remove(temp_ogg)

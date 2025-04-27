@@ -11,3 +11,7 @@ google-auth
 google-auth-httplib2
 google-auth-oauthlib
 google-apps-meet
+dotenv
+fastapi
+uvicorn
+groq

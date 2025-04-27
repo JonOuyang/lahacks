@@ -100,7 +100,7 @@ def book_meeting(summary: str="", location: str="Google Meet (Virtual)", descrip
             'timeZone': 'America/Los_Angeles',
         },
         'attendees': [
-            {'email': 'ziyangzhou2003@gmail.com'},
+            {'email': 'jonsouyang@gmail.com'},
         ],
         'reminders': {
             'useDefault': False,
@@ -115,5 +115,5 @@ def book_meeting(summary: str="", location: str="Google Meet (Virtual)", descrip
     print('Event created: %s' % (event.get('htmlLink')))
 
 if __name__ == "__main__":
-  # display_events(10)
+#   display_events(10)
   book_meeting()

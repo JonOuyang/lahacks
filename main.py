@@ -233,7 +233,4 @@ def orchestrator_call(prompt):
     else:
         print("<No function call found in the response.>")
         print(response.text)
-
-if __name__ == "__main__":
-    orchestrator_call('book a meeting in my calender to meet with eric tomorrow to discuss our next steps for LA Hack at 3pm')
     
