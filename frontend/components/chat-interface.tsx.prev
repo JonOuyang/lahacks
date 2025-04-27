@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from "react"
 import { Input } from "./ui/input"
 import { Button } from "./ui/button"
 import { cn } from "@/lib/utils"
-import { LinkIcon, Mic, Paperclip, Send, CheckCircle2 } from "lucide-react"
+import { LinkIcon, Mic, PauseCircle, Paperclip, Send, CheckCircle2, FileText, FolderOpen } from "lucide-react"
 import { MultiStepLoader, LoadingState } from "./multi-step-loader"
 import { motion } from "framer-motion"
+import { FileManager, UploadedFile } from "./file-manager"
+// No external speech services needed - using browser's Web Speech API
 
 // Import types
 import { 
@@ -31,22 +33,19 @@ type InitStep = {
 interface SourceData {
   id: string;
   title: string;
-  url: string;
+  url?: string; // URL is now optional if we have a file
   description?: string;
   dateAdded: Date;
+  isFile?: boolean;
+  file?: UploadedFile; // Reference to the uploaded file
 }
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isListening, setIsListening] = useState(false)
-  const [micStatus, setMicStatus] = useState<'inactive' | 'listening' | 'processing' | 'error'>('inactive')
   const [processingStage, setProcessingStage] = useState<ProcessingStage>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const recognitionRef = useRef<any>(null)
-  const [transcript, setTranscript] = useState('')
-  const [showNetworkError, setShowNetworkError] = useState(false)
-  const networkErrorTimeoutRef = useRef<any>(null)
   
   // Sources states
   const [showSourcesModal, setShowSourcesModal] = useState(false)
@@ -56,6 +55,11 @@ export default function ChatInterface() {
   const [draggedSource, setDraggedSource] = useState<SourceData | null>(null)
   const [showDropzone, setShowDropzone] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  // File management states
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [activeTab, setActiveTab] = useState<'url' | 'files'>('url')
   
   // New states for the multi-step loader
   const [showLoader, setShowLoader] = useState(false)
@@ -68,8 +72,10 @@ export default function ChatInterface() {
     { text: "Finalizing AI response..." }
   ])
 
-  // Web Speech API recognition setup
-  const recognition = useRef<any>(null)
+  // Web Speech API state
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
+  const [isSpeechSupported, setIsSpeechSupported] = useState(true)
 
   // State for the initialization animation (we'll set this to false immediately)
   const [showInitAnimation, setShowInitAnimation] = useState(true)
@@ -79,60 +85,16 @@ export default function ChatInterface() {
     setShowInitAnimation(false)
   }, [])
 
+  // Handle cleanup of recording resources when component unmounts
   useEffect(() => {
-    // Initialize speech recognition if supported
-    const initSpeechRecognition = () => {
-      if (typeof window !== 'undefined' && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
-        // @ts-ignore - Browser API compatibility
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
-        if (!recognitionRef.current) {
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-          recognitionRef.current.lang = 'en-US';
-          
-          // Handle results
-          recognitionRef.current.onresult = (event: any) => {
-            const transcript = Array.from(event.results)
-              .map((result: any) => result[0])
-              .map((result: any) => result.transcript)
-              .join("");
-
-            setInputValue(transcript);
-          };
-
-          // Handle errors
-          recognitionRef.current.onerror = (event: any) => {
-            console.error("Speech recognition error", event.error);
-            if (event.error === 'not-allowed') {
-              alert("Please enable microphone access to use voice input.");
-            }
-            setIsListening(false);
-          };
-
-          // Handle end of speech
-          recognitionRef.current.onend = () => {
-            setIsListening(false);
-          };
-        }
-        return true;
-      }
-      return false;
-    };
-    
-    const speechSupported = initSpeechRecognition();
-    if (!speechSupported) {
-      console.warn("Speech recognition is not supported in this browser.");
-    }
-    
-    // Cleanup function
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.onresult = null;
-        recognitionRef.current.onerror = null;
-        recognitionRef.current.onend = null;
-        recognitionRef.current.abort();
+      if (mediaRecorderRef.current) {
+        const tracks = mediaRecorderRef.current.stream.getTracks();
+        tracks.forEach(track => track.stop());
+      }
+      
+      if (recordingTimerRef.current) {
+        window.clearInterval(recordingTimerRef.current);
       }
     };
   }, [])
@@ -142,218 +104,81 @@ export default function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Toggle speech recognition with improved reliability
-  const toggleListening = () => {
-    // Always create a new instance when starting to avoid issues with reusing sessions
-    if (!isListening) {
-      // Set status to processing while we set up the microphone
-      setMicStatus('processing');
-      // Create a new recognition instance each time for better reliability
-      if (typeof window !== 'undefined' && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
+  // Handle advanced voice recording with Eleven Labs
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      if (mediaRecorderRef.current) {
         try {
-          // Clean up any existing instance
-          if (recognitionRef.current) {
-            try {
-              recognitionRef.current.onresult = null;
-              recognitionRef.current.onerror = null;
-              recognitionRef.current.onend = null;
-              recognitionRef.current.abort();
-            } catch (e) {
-              console.warn('Error cleaning up previous recognition instance:', e);
-            }
-          }
-
-          // @ts-ignore - Browser API compatibility
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
+          setIsRecording(false);
+          setTranscribingStatus('transcribing');
           
-          // Configure for optimal experience
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-          recognitionRef.current.lang = 'en-US';
-          
-          // Add additional options to make it more resilient
-          try {
-            // Attempt to set mode to make it work offline if possible
-            // @ts-ignore - Some browsers support this
-            recognitionRef.current.serviceURI = 'client';
-          } catch (e) {
-            console.log('Browser does not support serviceURI option for speech recognition');
+          // Stop the recording timer
+          if (recordingTimerRef.current) {
+            window.clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
           }
           
-          // Wait a moment to set up handlers before starting to avoid race conditions
-          setTimeout(() => {
-            // Collect partial results for a better user experience
-            let finalTranscript = '';
-            
-            // Set up event handlers - critical for correct operation
-            recognitionRef.current.onresult = (event: any) => {
-              let interimTranscript = '';
-              
-              // Process all results
-              for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcriptText = event.results[i][0].transcript;
-                
-                if (event.results[i].isFinal) {
-                  finalTranscript += transcriptText;
-                } else {
-                  interimTranscript += transcriptText;
-                }
-              }
-              
-              // Save the transcript and update the input field
-              const currentTranscript = finalTranscript || interimTranscript;
-              setTranscript(currentTranscript);
-              setInputValue(currentTranscript);
-              
-              // Update microphone status
-              setMicStatus('listening');
-              console.log('Transcribing:', currentTranscript);
-            };
-            
-            // Handle errors more gracefully
-            recognitionRef.current.onerror = (event: any) => {
-              console.error("Speech recognition error", event.error);
-              
-              if (event.error === 'not-allowed' || event.error === 'audio-capture') {
-                alert("Please enable microphone access to use voice input. Check your browser permissions.");
-                setIsListening(false);
-                setMicStatus('inactive');
-              } else if (event.error === 'network') {
-                console.log("Network error occurred in speech recognition");
-                
-                // Show network error message
-                setShowNetworkError(true);
-                setMicStatus('error');
-                
-                // Clear any existing timeout
-                if (networkErrorTimeoutRef.current) {
-                  clearTimeout(networkErrorTimeoutRef.current);
-                }
-                
-                // Auto-hide the network error after 3 seconds
-                networkErrorTimeoutRef.current = setTimeout(() => {
-                  setShowNetworkError(false);
-                  
-                  // Only go back to inactive if we're not still trying to listen
-                  if (micStatus === 'error') {
-                    setMicStatus('inactive');
-                  }
-                }, 3000);
-                
-                // We'll keep the recognition running via the onend handler
-                // which will attempt to restart with backoff
-              } else if (event.error === 'aborted') {
-                // This is an expected error when we manually stop recognition
-                console.log("Speech recognition was aborted");
-                setIsListening(false);
-                setMicStatus('inactive');
-              } else if (event.error === 'no-speech') {
-                // This is normal - user hasn't spoken yet
-                console.log("No speech detected yet");
-                // Don't change the status, let it continue listening
-              } else {
-                console.warn("Speech recognition error:", event.error);
-                setIsListening(false);
-                setMicStatus('inactive');
-              }
-            };
-            
-            // Handle recognition ending with improved recovery
-            let reconnectAttempts = 0;
-            const maxReconnectAttempts = 3;
-            
-            recognitionRef.current.onend = () => {
-              console.log('Speech recognition ended');
-              
-              // Only try to restart if user is still expecting to listen
-              if (isListening) {
-                setMicStatus('processing'); // Show processing state during restart
-                
-                // Increase backoff time for each retry attempt
-                const backoffDelay = Math.min(300 * Math.pow(1.5, reconnectAttempts), 2000);
-                reconnectAttempts++;
-                
-                // Show reconnection message if we're having trouble
-                if (reconnectAttempts > 1) {
-                  console.log(`Reconnection attempt ${reconnectAttempts} of ${maxReconnectAttempts}...`);
-                }
-                
-                // If we've tried too many times, give up
-                if (reconnectAttempts > maxReconnectAttempts) {
-                  console.warn('Maximum reconnection attempts reached. Stopping speech recognition.');
-                  setIsListening(false);
-                  setMicStatus('inactive');
-                  // Keep any transcript we might have already captured
-                  return;
-                }
-                
-                // Restart recognition after a backoff delay to avoid hammering the API
-                setTimeout(() => {
-                  try {
-                    // Check if we're still in listening mode before trying to restart
-                    if (isListening) {
-                      recognitionRef.current.start();
-                      console.log('Restarted speech recognition after end event');
-                      setMicStatus('listening');
-                      // Reset reconnect attempts if we succeed
-                      setTimeout(() => {
-                        if (isListening) {
-                          reconnectAttempts = 0;
-                        }
-                      }, 1000);
-                    }
-                  } catch (e) {
-                    console.error('Failed to restart speech recognition:', e);
-                    // If we can't restart, we'll try again on the next cycle
-                    // unless we've hit the maximum attempts
-                    if (reconnectAttempts > maxReconnectAttempts) {
-                      setIsListening(false);
-                      setMicStatus('inactive');
-                    }
-                  }
-                }, backoffDelay);
-              } else {
-                setIsListening(false);
-                setMicStatus('inactive');
-                
-                // If we have transcript text but aren't listening anymore, keep it in the input
-                if (transcript) {
-                  console.log('Finalizing transcript:', transcript);
-                }
-              }
-            };
-            
-            // Start the recognition process
-            recognitionRef.current.start();
-            setIsListening(true);
-            setMicStatus('listening');
-            console.log('Speech recognition started');
-          }, 100);
+          // Get the recorded audio as a blob
+          const audioBlob = await stopRecording(mediaRecorderRef.current);
+          mediaRecorderRef.current = null;
           
-        } catch (e) {
-          console.error("Error initializing speech recognition:", e);
-          alert("Could not start speech recognition. Please try again.");
+          // Transcribe the audio with Eleven Labs
+          const transcription = await transcribeAudioWithElevenLabs(audioBlob);
+          
+          // Update input with transcription
+          setInputValue(transcription);
+          setTranscribingStatus('done');
           setIsListening(false);
+          
+          // Reset recording duration
+          setRecordingDuration(0);
+          
+          // Automatically hide transcription status after a delay
+          setTimeout(() => {
+            setTranscribingStatus(null);
+          }, 2000);
+        } catch (error) {
+          console.error('Error processing recording:', error);
+          setIsRecording(false);
+          setIsListening(false);
+          setTranscribingStatus(null);
+          alert('Could not process recording. Please try again.');
         }
-      } else {
-        alert("Speech recognition is not supported in your browser.");
       }
     } else {
-      // Stop listening
-      if (recognitionRef.current) {
-        try {
-          // First update the UI, then stop the recognition
-          setMicStatus('processing'); 
-          recognitionRef.current.stop();
-          console.log('Speech recognition stopped by user');
-        } catch (e) {
-          console.error("Error stopping speech recognition:", e);
-        }
+      // Start new recording
+      try {
+        const mediaRecorder = await startRecording();
+        mediaRecorderRef.current = mediaRecorder;
+        
+        // Start recording
+        const chunks: Blob[] = [];
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+        
+        mediaRecorder.start();
+        setIsRecording(true);
+        setIsListening(true);
+        
+        // Update recording duration timer
+        setRecordingDuration(0);
+        recordingTimerRef.current = window.setInterval(() => {
+          setRecordingDuration(prev => prev + 1);
+        }, 1000);
+      } catch (error) {
+        console.error('Error starting recording:', error);
+        alert('Could not access microphone. Please check your permissions and try again.');
       }
-      setIsListening(false);
-      // Keep micStatus as 'processing' until onend event, then it will become 'inactive'
     }
+  }
+  
+  // Format seconds to MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
   }
 
   // Process user message and get AI response
@@ -387,11 +212,21 @@ export default function ChatInterface() {
 
         // Add the sources as attachments
         attachedSources.forEach(source => {
-          attachments.push({
-            type: 'link',
-            url: source.url,
-            title: source.title
-          })
+          if (source.isFile && source.file) {
+            // For file sources, use the content URL from the file
+            attachments.push({
+              type: 'file',
+              url: source.file.content || '#',
+              title: source.file.name
+            })
+          } else if (source.url) {
+            // For URL sources
+            attachments.push({
+              type: 'link',
+              url: source.url,
+              title: source.title
+            })
+          }
         })
       }
       
@@ -449,14 +284,20 @@ export default function ChatInterface() {
     if (e) e.preventDefault()
     
     if (inputValue.trim() && !isListening) {
-      // If speech recognition is active, stop it
-      if (recognitionRef.current && isListening) {
-        try {
-          recognitionRef.current.stop()
-          setIsListening(false)
-        } catch (error) {
-          console.error('Error stopping speech recognition:', error)
+      // Stop any ongoing recording
+      if (isRecording && mediaRecorderRef.current) {
+        const tracks = mediaRecorderRef.current.stream.getTracks();
+        tracks.forEach(track => track.stop());
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+        setIsListening(false);
+        
+        if (recordingTimerRef.current) {
+          window.clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
         }
+        
+        setRecordingDuration(0);
       }
 
       const userMessage = inputValue.trim()
@@ -470,8 +311,8 @@ export default function ChatInterface() {
   // Derived state - do we have messages?
   const hasMessages = messages.length > 0
 
-  // Handle adding a new source
-  const addSource = () => {
+  // Handle adding a new source from URL
+  const addUrlSource = () => {
     if (sourceInput.url.trim() && sourceInput.title.trim()) {
       setAttachedSources([
         ...attachedSources,
@@ -480,11 +321,41 @@ export default function ChatInterface() {
           title: sourceInput.title,
           url: sourceInput.url,
           description: sourceInput.description,
-          dateAdded: new Date()
+          dateAdded: new Date(),
+          isFile: false
         }
       ])
       setSourceInput({ title: "", url: "", description: "" })
     }
+  }
+  
+  // Handle adding file sources
+  const addFileSource = (fileIds: string[]) => {
+    const fileSources = fileIds.map(fileId => {
+      const file = uploadedFiles.find(f => f.id === fileId);
+      if (!file) return null;
+      
+      return {
+        id: `source-${Date.now()}-${file.id}`,
+        title: file.name,
+        description: `File: ${file.name} (${formatFileSize(file.size)})`,
+        dateAdded: new Date(),
+        isFile: true,
+        file: file
+      };
+    }).filter(Boolean) as SourceData[];
+    
+    setAttachedSources([...attachedSources, ...fileSources]);
+    setSelectedFiles([]);
+  }
+  
+  // Format file size utility function
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   // Handle removing a source
@@ -550,48 +421,114 @@ export default function ChatInterface() {
               </Button>
             </div>
             
-            <div className="mb-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Title</label>
-                <Input 
-                  type="text" 
-                  value={sourceInput.title}
-                  onChange={(e) => setSourceInput({...sourceInput, title: e.target.value})}
-                  placeholder="Document name or title"
-                  className="w-full"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1">URL</label>
-                <Input 
-                  type="text" 
-                  value={sourceInput.url}
-                  onChange={(e) => setSourceInput({...sourceInput, url: e.target.value})}
-                  placeholder="https://example.com/document"
-                  className="w-full"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-1">Description (optional)</label>
-                <Input 
-                  type="text" 
-                  value={sourceInput.description}
-                  onChange={(e) => setSourceInput({...sourceInput, description: e.target.value})}
-                  placeholder="Brief description of this source"
-                  className="w-full"
-                />
-              </div>
-              
-              <Button 
-                onClick={addSource}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                disabled={!sourceInput.url.trim() || !sourceInput.title.trim()}
+            {/* Source type tabs */}
+            <div className="flex mb-6 border-b border-gray-200 dark:border-gray-700">
+              <button
+                className={cn(
+                  "py-2 px-4 font-medium text-sm flex items-center gap-2",
+                  activeTab === 'url' 
+                    ? "text-indigo-600 border-b-2 border-indigo-600" 
+                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                )}
+                onClick={() => setActiveTab('url')}
               >
-                Add Source
-              </Button>
+                <LinkIcon className="h-4 w-4" />
+                URL Sources
+              </button>
+              
+              <button
+                className={cn(
+                  "py-2 px-4 font-medium text-sm flex items-center gap-2",
+                  activeTab === 'files' 
+                    ? "text-indigo-600 border-b-2 border-indigo-600" 
+                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                )}
+                onClick={() => setActiveTab('files')}
+              >
+                <FileText className="h-4 w-4" />
+                My Files
+              </button>
             </div>
+            
+            {/* URL input form */}
+            {activeTab === 'url' && (
+              <div className="mb-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title</label>
+                  <Input 
+                    type="text" 
+                    value={sourceInput.title}
+                    onChange={(e) => setSourceInput({...sourceInput, title: e.target.value})}
+                    placeholder="Document name or title"
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">URL</label>
+                  <Input 
+                    type="text" 
+                    value={sourceInput.url}
+                    onChange={(e) => setSourceInput({...sourceInput, url: e.target.value})}
+                    placeholder="https://example.com/document"
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description (optional)</label>
+                  <Input 
+                    type="text" 
+                    value={sourceInput.description}
+                    onChange={(e) => setSourceInput({...sourceInput, description: e.target.value})}
+                    placeholder="Brief description of this source"
+                    className="w-full"
+                  />
+                </div>
+                
+                <Button 
+                  onClick={addUrlSource}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                  disabled={!sourceInput.url.trim() || !sourceInput.title.trim()}
+                >
+                  Add URL Source
+                </Button>
+              </div>
+            )}
+            
+            {/* File manager */}
+            {activeTab === 'files' && (
+              <div className="mb-6">
+                <FileManager
+                  files={uploadedFiles}
+                  selectedFiles={selectedFiles}
+                  onFileUpload={(files) => {
+                    setUploadedFiles([...uploadedFiles, ...files]);
+                  }}
+                  onFileDelete={(fileId) => {
+                    setUploadedFiles(uploadedFiles.filter(f => f.id !== fileId));
+                    setSelectedFiles(selectedFiles.filter(id => id !== fileId));
+                  }}
+                  onFileSelect={(fileId) => {
+                    setSelectedFiles(prev => 
+                      prev.includes(fileId) 
+                        ? prev.filter(id => id !== fileId)
+                        : [...prev, fileId]
+                    );
+                  }}
+                  className="max-h-[400px] overflow-y-auto"
+                />
+                
+                {selectedFiles.length > 0 && (
+                  <Button 
+                    onClick={() => addFileSource(selectedFiles)}
+                    className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    Add {selectedFiles.length} {selectedFiles.length === 1 ? 'File' : 'Files'} as Sources
+                  </Button>
+                )}
+              </div>
+            )}
             
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
               <h4 className="font-medium mb-3">Attached Sources ({attachedSources.length})</h4>
@@ -624,9 +561,16 @@ export default function ChatInterface() {
                       
                       <div className="flex-1 min-w-0">
                         <h5 className="font-medium truncate">{source.title}</h5>
-                        <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate block">
-                          {source.url}
-                        </a>
+                        {source.isFile ? (
+                          <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            {source.file ? source.file.name : 'Uploaded file'}
+                          </div>
+                        ) : source.url ? (
+                          <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate block">
+                            {source.url}
+                          </a>
+                        ) : null}
                         {source.description && (
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{source.description}</p>
                         )}
@@ -696,7 +640,7 @@ export default function ChatInterface() {
                   className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
                 >
                   <div className="w-8 h-8 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white">
-                  <motion.div
+                    <motion.div
                       animate={{ 
                         scale: [1, 1.05, 1],
                         rotate: [0, 5, 0, -5, 0] 
@@ -946,15 +890,24 @@ export default function ChatInterface() {
                 </div>
                 <Button 
                   type="button"
-                  onClick={toggleListening}
+                  onClick={toggleRecording}
                   className={cn(
-                    "rounded-full h-12 w-12 shadow-sm", 
-                    isListening 
-                      ? "bg-red-50 text-red-500 border-red-200 hover:bg-red-100 hover:text-red-600" 
-                      : "border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    "rounded-full h-10 w-10",
+                    isRecording ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-600"
                   )}
+                  variant="ghost"
+                  disabled={transcribingStatus === 'transcribing'}
                 >
-                  <Mic className="h-5 w-5" />
+                  {isRecording ? (
+                    <div className="flex items-center justify-center">
+                      <span className="animate-pulse mr-1">{formatTime(recordingDuration)}</span>
+                      <PauseCircle className="h-4 w-4" />
+                    </div>
+                  ) : transcribingStatus === 'transcribing' ? (
+                    <div className="text-xs animate-pulse">Processing...</div>
+                  ) : (
+                    <Mic className="h-5 w-5" />
+                  )}
                 </Button>
                 <Button 
                   type="submit" 
@@ -1089,80 +1042,25 @@ export default function ChatInterface() {
               </div>
               <Button 
                 type="button"
-                onClick={toggleListening}
+                onClick={toggleRecording}
                 className={cn(
-                  "rounded-full h-12 w-12 shadow-sm flex items-center justify-center", 
-                  micStatus === 'listening' 
+                  "rounded-full h-12 w-12 shadow-sm", 
+                  isRecording 
                     ? "bg-red-50 text-red-500 border-red-200 hover:bg-red-100 hover:text-red-600" 
-                    : micStatus === 'processing'
-                      ? "bg-amber-50 text-amber-500 border-amber-200 hover:bg-amber-100 hover:text-amber-600"
-                      : micStatus === 'error'
-                        ? "bg-rose-50 text-rose-500 border-rose-200 hover:bg-rose-100 hover:text-rose-600"
-                        : "border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    : "border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
                 )}
+                disabled={transcribingStatus === 'transcribing'}
               >
-                {micStatus === 'listening' ? (
-                  <motion.div
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ duration: 1.5, repeat: Infinity, type: "spring", stiffness: 500 }}
-                    className="relative"
-                  >
-                    <Mic className="h-5 w-5" />
-                    <motion.span 
-                      className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500"
-                      animate={{ opacity: [0.5, 1, 0.5] }}
-                      transition={{ duration: 1, repeat: Infinity }}
-                    />
-                  </motion.div>
-                ) : micStatus === 'processing' ? (
-                  <motion.div
-                    animate={{ rotate: [0, 180] }}
-                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    className="relative"
-                  >
-                    <Mic className="h-5 w-5" />
-                  </motion.div>
-                ) : micStatus === 'error' ? (
-                  <motion.div
-                    initial={{ scale: 0.9 }}
-                    animate={{ scale: [0.9, 1.1, 0.9], x: [-2, 2, -2, 0] }}
-                    transition={{ duration: 0.5 }}
-                    className="relative"
-                  >
-                    {/* Network error icon */}
-                    <div className="relative">
-                      <Mic className="h-5 w-5" />
-                      <motion.span 
-                        className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-rose-500 flex items-center justify-center text-white text-xs font-bold"
-                      >
-                        !
-                      </motion.span>
-                    </div>
-                  </motion.div>
+                {isRecording ? (
+                  <div className="flex items-center text-xs">
+                    <span className="animate-pulse">{formatTime(recordingDuration)}</span>
+                  </div>
+                ) : transcribingStatus === 'transcribing' ? (
+                  <div className="text-xs animate-pulse">Transcribing...</div>
                 ) : (
-                  <motion.div
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                  >
-                    <Mic className="h-5 w-5" />
-                  </motion.div>
+                  <Mic className="h-5 w-5" />
                 )}
               </Button>
-              
-              {/* Network error message tooltip */}
-              {showNetworkError && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute -top-16 left-1/2 transform -translate-x-1/2 bg-white dark:bg-gray-800 shadow-lg rounded-lg px-4 py-2 text-sm text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 w-64 text-center z-10"
-                >
-                  <p>Network issue detected. Speech recognition may be limited.</p>
-                  <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-white dark:bg-gray-800 border-r border-b border-rose-200 dark:border-rose-800"></div>
-                </motion.div>
-              )}
-              
               <Button 
                 type="submit" 
                 className="rounded-full h-12 w-12 bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
