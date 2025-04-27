@@ -20,7 +20,28 @@ from agent_functions.slack import send_files_to_slack, schedule_meetings
 
 # FUNCTION DECLARATIONS
 complete_homework_function = {
-    
+    "name": "complete_homework",
+    "description": "empty description",
+}
+
+edit_jupyter_function = {
+    "name": "edit_jupyter",
+    "description": "open the jupyter notebook file and begin editing it",
+}
+
+organize_notes_function = {
+    "name": "organize_notes",
+    "description": "organize your notes",
+}
+
+quiz_function = {
+    "name": "quiz",
+    "description": "begin quizzing the user on past lecture content",
+}
+
+send_files_to_slack = {
+    "name": "send_files_to_slack",
+    "description": "empty description",
 }
 
 
