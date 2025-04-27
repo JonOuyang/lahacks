@@ -3,6 +3,8 @@ import sys
 import time
 import threading
 
+print('hello world')
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
