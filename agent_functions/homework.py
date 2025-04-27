@@ -71,7 +71,7 @@ def complete_homework(doc_id: str, user_prompt: str):
                     'location': {
                         'index': document.get('body').get('content')[-1].get('endIndex') - 1,
                     },
-                    'text': f"\n\n{answer}"
+                    'text': f"\n{answer}"
                 }
             }
         ]
