@@ -622,6 +622,7 @@ export default function ChatInterface() {
           <div className="w-full max-w-3xl mx-auto flex flex-col items-center h-screen relative z-10">
             {/* Top section with logo, title and prompt */}
             <div className="flex flex-col items-center justify-end flex-grow">
+
               {/* Logo animation */}
               <motion.div 
                 initial={{ scale: 0.8, opacity: 0 }}
@@ -629,17 +630,20 @@ export default function ChatInterface() {
                 transition={{ type: "spring", duration: 0.8 }}
                 className="w-24 h-24 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-lg"
               >
-                <motion.div 
-                  transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                  className="text-white text-4xl font-bold"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 8V4H8"></path>
-                    <path d="M12 4h4"></path>
-                    <rect width="16" height="12" x="4" y="8" rx="2"></rect>
-                    <path d="m6 16 4-2 4 2 4-2"></path>
-                  </svg>
-                </motion.div>
+              <motion.div
+                animate={{ 
+                  scale: [1, 1.05, 1],
+                  rotate: [0, 5, 0, -5, 0] 
+                }}
+                transition={{ 
+                  duration: 5,
+                  repeat: Infinity,
+                  repeatType: "loop"
+                }}
+                className="text-4xl"
+              >
+                💬
+              </motion.div>
               </motion.div>
               
               {/* Title/Welcome */}
