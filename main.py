@@ -3,8 +3,6 @@ import sys
 import time
 import threading
 
-print('hello world')
-
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -41,49 +39,53 @@ quiz_function = {
     "description": "begin quizzing the user on past lecture content",
 }
 
-send_files_to_slack = {
+send_files_to_slack_function = {
     "name": "send_files_to_slack",
-    "description": "empty description",
-}
-
-
-schedule_meeting_function = {
-    "name": "schedule_meeting",
-    "description": "Schedules a meeting with specified attendees at a given time and date.",
+    "description": "send specified files to slack",
     "parameters": {
         "type": "object",
         "properties": {
-            "attendees": {
-                "type": "array",
-                "items": {"type": "string"},
+            "file1": {
+                "type": "string",
                 "description": "List of people attending the meeting.",
              },
-            "date": {
+            "file2": {
                 "type": "string",
                 "description": "Date of the meeting (e.g., '2024-07-29')",
              },
-            "time": {
-                "type": "string",
-                "description": "Time of the meeting (e.g., '15:00')",
-            },
-            "topic": {
-                "type": "string",
-                "description": "The subject or topic of the meeting.",
-            },
         },
-        "required": ["attendees", "date", "time", "topic"],
+        "required": ["file1", "file2"],
+    },
+}
+
+schedule_meetings_function = {
+    "name": "schedule_meetings",
+    "description": "schedule a meeting on google calander on behalf of user",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "date": {
+                "type": "string",
+                "description": "in the format month/date/year",
+             },
+            "time_start": {
+                "type": "string",
+                "description": "time that the meeting starts at, in the format hour:minute AM/PM",
+             },
+            "time_end": {
+                "type": "string",
+                "description": "time that the meeting ends at, in the format hour:minute AM/PM",
+             },
+        },
+        "required": ["date", "time"],
     },
 }
 
 
-
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-tools = types.Tool(function_declarations=[schedule_meeting_function])
-config = types.GenerateContentConfig(tools=[tools])
-
 def orchestrator_call(prompt):
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
+    tools = types.Tool(function_declarations=[complete_homework_function, edit_jupyter_function, organize_notes_function, quiz_function, send_files_to_slack_function, schedule_meetings_function])
+    config = types.GenerateContentConfig(tools=[tools])
 
     model = "gemini-2.5-flash-preview-04-17"
     contents = [
@@ -110,8 +112,17 @@ def orchestrator_call(prompt):
         contents=contents,
         config=generate_content_config
     )
-    print(response.text)
+    
+    if response.candidates[0].content.parts[0].function_call:
+        function_call = response.candidates[0].content.parts[0].function_call
+        print(f"Function to call: {function_call.name}")
+        print(f"Arguments: {function_call.args}")
+        #  In a real app, you would call your function here:
+        #  result = schedule_meeting(**function_call.args)
+    else:
+        print("<No function call found in the response.>")
+        print(response.text)
 
 if __name__ == "__main__":
-    orchestrator_call('introduce yourself')
+    orchestrator_call('Can you quickly quiz me on all of my lecture contents in the past year?')
     
