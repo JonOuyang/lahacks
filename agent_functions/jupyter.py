@@ -88,6 +88,6 @@ def edit_jupyter(file_path: str, prompt: str):
     return "Jupyter cell execution completed successfully."
 
 if __name__ == "__main__":
-    notebook_path = "../research-ml-models/original-iris-classification.ipynb"
+    notebook_path = "/Users/ericzhou03/Desktop/original-iris-classification.ipynb"
     user_prompt = "Replace the Random Forest classifier with a Decision Tree classifier."
     edit_jupyter(notebook_path, user_prompt)

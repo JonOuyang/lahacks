@@ -245,10 +245,9 @@ def orchestrator_call(prompt):
         if function_call.name == "tts":
             tts(**function_call.args)
         elif function_call.name == "complete_homework":
-            complete_homework(doc_id=hw_id, user_prompt=function_call.args.get("files", ""))
+            complete_homework(doc_id=hw_id, user_prompt=function_call.args.get("prompt", ""))
         elif function_call.name == "edit_jupyter":
-            # FORCE the hardcoded path
-            edit_jupyter(file_path=notebook_path, prompt=function_call.args.get("files", ""))
+            edit_jupyter(file_path=notebook_path, prompt=prompt)
         elif function_call.name == "organize_notes":
             organize_notes(**function_call.args)
         elif function_call.name == "quiz":
