@@ -12,11 +12,12 @@ import datetime
 load_dotenv()
 
 # FUNCTION IMPORTS
+from agent_functions.calendar_utils import display_events, book_meeting
 from agent_functions.homework import complete_homework
 from agent_functions.jupyter import edit_jupyter
 from agent_functions.organize_notes import organize_notes
 from agent_functions.quiz import quiz
-from agent_functions.slack import send_files_to_slack, schedule_meetings
+from agent_functions.slack import send_files_to_slack
 from audio.audio import tts
 
 # FUNCTION DECLARATIONS
@@ -113,29 +114,51 @@ send_files_to_slack_function = {
     },
 }
 
-schedule_meetings_function = {
-    "name": "schedule_meetings",
+display_events_function = {
+    "name": "display_events",
+    "description": "fetch the last n number of events",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "n": {
+                "type": "int",
+                "description": "Number of events to fetch from calender (if not specified, default to 10)",
+             },
+        },
+        "required": ["n"],
+    },
+}
+
+book_meeting_function = {
+    "name": "book_meeting",
     "description": "schedule a meeting on google calander on behalf of user",
     "parameters": {
         "type": "object",
         "properties": {
-            "date": {
+            "summary": {
                 "type": "string",
-                "description": "in the format month/date/year",
+                "description": "The title of the meeting, what appears at the top of the invitation. This should be at most a few words long.",
              },
-            "time_start": {
+            "location": {
                 "type": "string",
-                "description": "time that the meeting starts at, in the format hour:minute AM/PM",
+                "description": "Location of the meeting. If not specified, default to online (Google Meeting)",
              },
-            "time_end": {
+            "description": {
                 "type": "string",
-                "description": "time that the meeting ends at, in the format hour:minute AM/PM",
+                "description": "Longer form description of what this email is about. If not specified, default to 'coffee chat'",
+             },
+            "startTime": {
+                "type": "string",
+                "description": "Start time of meeting, represented similar to 2025-04-28T10:00:00-07:00 format, in PST (Los Angeles) time.",
+             },
+            "endTime": {
+                "type": "string",
+                "description": "End time of meeting, represented similar to 2025-04-28T09:00:00-07:00 format, in PST (Los Angeles) time. If not specified, default to 1 hour after start time",
              },
         },
-        "required": ["date", "time_start", "time_end"],
+        "required": ["summary", "location", "description", "startTime", "endTime"],
     },
 }
-
 
 def orchestrator_call(prompt):
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -145,7 +168,7 @@ def orchestrator_call(prompt):
                                               organize_notes_function, 
                                               quiz_function, 
                                               send_files_to_slack_function, 
-                                              schedule_meetings_function
+                                              book_meeting_function
                                               ])
     config = types.GenerateContentConfig(tools=[tools])
 
@@ -202,13 +225,15 @@ def orchestrator_call(prompt):
             quiz(**function_call.args)
         elif function_call.name == "send_files_to_slack":
             send_files_to_slack(**function_call.args)
-        elif function_call.name == "schedule_meetings":
-            schedule_meetings(**function_call.args)
+        elif function_call.name == "book_meeting":
+            book_meeting(**function_call.args)
+        elif function_call.name == "display_events":
+            display_events(**function_call.args)
 
     else:
         print("<No function call found in the response.>")
         print(response.text)
 
 if __name__ == "__main__":
-    orchestrator_call('tell me a joke')
+    orchestrator_call('book a meeting in my calender to meet with eric tomorrow to discuss our next steps for LA Hack at 3pm')
     

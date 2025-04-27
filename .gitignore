@@ -12,6 +12,10 @@ yarn-error.log*
 .DS_Store
 *.pem
 
+# JSON
+credentials.json 
+token.json
+
 # Environment variables
 .env
 .env.local
@@ -24,3 +28,6 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo
+
+# Pycache
+*/__pycache__/*
