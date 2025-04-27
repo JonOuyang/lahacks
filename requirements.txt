@@ -3,3 +3,11 @@ google
 google-genai
 aiogram
 aiohttp
+nbformat
+nbconvert
+google-api-python-client
+google-apps-meet
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+google-apps-meet
