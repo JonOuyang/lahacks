@@ -3,3 +3,5 @@ google
 google-genai
 aiogram
 aiohttp
+nbformat
+nbconvert
