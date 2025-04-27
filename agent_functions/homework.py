@@ -1,4 +1,4 @@
 # imports
 
-def complete_homework:
+def complete_homework():
     pass

@@ -11,6 +11,53 @@ import base64
 # Load API keys
 load_dotenv()
 
+# FUNCTION IMPORTS
+from agent_functions.homework import complete_homework
+from agent_functions.jupyter import edit_jupyter
+from agent_functions.organize_notes import organize_notes
+from agent_functions.quiz import quiz
+from agent_functions.slack import send_files_to_slack, schedule_meetings
+
+# FUNCTION DECLARATIONS
+complete_homework_function = {
+    
+}
+
+
+schedule_meeting_function = {
+    "name": "schedule_meeting",
+    "description": "Schedules a meeting with specified attendees at a given time and date.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "attendees": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of people attending the meeting.",
+             },
+            "date": {
+                "type": "string",
+                "description": "Date of the meeting (e.g., '2024-07-29')",
+             },
+            "time": {
+                "type": "string",
+                "description": "Time of the meeting (e.g., '15:00')",
+            },
+            "topic": {
+                "type": "string",
+                "description": "The subject or topic of the meeting.",
+            },
+        },
+        "required": ["attendees", "date", "time", "topic"],
+    },
+}
+
+
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+tools = types.Tool(function_declarations=[schedule_meeting_function])
+config = types.GenerateContentConfig(tools=[tools])
+
 def orchestrator_call(prompt):
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
