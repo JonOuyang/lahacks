@@ -73,17 +73,19 @@ def edit_jupyter(file_path: str, prompt: str):
         "language": "python",
     }
 
-    # Execute only the modified cells
+    print("Jupyter cell execution began successfully.")
     ep = ExecutePreprocessor(timeout=600, kernel_name=kernel_name)
     try:
         ep.preprocess(notebook, {"metadata": {"path": "./"}})
-        print("Cells executed successfully.")
+        print("Jupyter cell execution completed successfully.")
     except Exception as e:
         print(f"Error during execution: {e}")
 
     # Save the executed notebook
     with open(file_path, "w", encoding="utf-8") as f:
         nbformat.write(notebook, f)
+
+    return "Jupyter cell execution completed successfully."
 
 if __name__ == "__main__":
     notebook_path = "../research-ml-models/iris-classification.ipynb"
