@@ -42,12 +42,12 @@ complete_homework_function = {
     "parameters": {
         "type": "object",
         "properties": {
-            "files": {
+            "prompt": {
                 "type": "string",
-                "description": "file ",
+                "description": "Instruction on how to modify the Google Doc.",
              },
         },
-        "required": ["files"],
+        "required": ["prompt"],
     },
 }
 
@@ -185,7 +185,8 @@ book_meeting_function = {
 }
 
 def orchestrator_call(prompt):
-    notebook_path = "/Users/ericzhou03/Desktop/original-iris-classification.ipynb"
+    notebook_path = "/Users/sunny/research-ml-models/original-iris-classification.ipynb"
+    hw_id = "1Z_PHcuVLfis0VVOyq3s4z7Ijo9fj5JrL2c5u78aHDLo"
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     tools = types.Tool(function_declarations=[speak_function,
                                               complete_homework_function, 
@@ -244,7 +245,7 @@ def orchestrator_call(prompt):
         if function_call.name == "tts":
             tts(**function_call.args)
         elif function_call.name == "complete_homework":
-            complete_homework(**function_call.args)
+            complete_homework(doc_id=hw_id, user_prompt=function_call.args.get("files", ""))
         elif function_call.name == "edit_jupyter":
             # FORCE the hardcoded path
             edit_jupyter(file_path=notebook_path, prompt=function_call.args.get("files", ""))
