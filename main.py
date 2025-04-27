@@ -15,6 +15,7 @@ load_dotenv()
 from agent_functions.calendar_utils import display_events, book_meeting
 from agent_functions.homework import complete_homework
 from agent_functions.jupyter import edit_jupyter
+from agent_functions.linkd import search_linkd
 from agent_functions.organize_notes import organize_notes
 from agent_functions.quiz import quiz
 from agent_functions.slack import send_files_to_slack
@@ -62,6 +63,29 @@ edit_jupyter_function = {
              },
         },
         "required": ["files"],
+    },
+}
+
+search_linkd_function = {
+    "name": "search_linkd",
+    "description": "search through a massive database of alumni to find people who match certain keywords",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "string",
+                "description": "string representation of integer number of query results (default to 5 unless otherwise specified). Examples could be 5, 10, 20, 30...",
+             },
+            "query": {
+                "type": "string",
+                "description": "keywords to search alumni for; i.e. 'Robotics Researchers' or 'Startup Founders'",
+             },
+            "school": {
+                "type": "string",
+                "description": "School of alumni to be searched for. If not specified, default to the University of California, Los Angeles (UCLA)",
+             },
+        },
+        "required": ["limit", "query", "school"],
     },
 }
 
@@ -121,7 +145,7 @@ display_events_function = {
         "type": "object",
         "properties": {
             "n": {
-                "type": "int",
+                "type": "integer",
                 "description": "Number of events to fetch from calender (if not specified, default to 10)",
              },
         },
@@ -165,9 +189,11 @@ def orchestrator_call(prompt):
     tools = types.Tool(function_declarations=[speak_function,
                                               complete_homework_function, 
                                               edit_jupyter_function, 
+                                              search_linkd_function,
                                               organize_notes_function, 
                                               quiz_function, 
-                                              send_files_to_slack_function, 
+                                              send_files_to_slack_function,
+                                              display_events_function, 
                                               book_meeting_function
                                               ])
     config = types.GenerateContentConfig(tools=[tools])
@@ -182,7 +208,8 @@ def orchestrator_call(prompt):
         
         User's prompt: {prompt}
         
-        You must NEVER output plain text. You must ALWAYS use a function call. Either to express yourself or execute an action.
+        You must NEVER output plain text. You must ALWAYS use a function call. Either to express yourself or execute an action. When calling functions, assume that ALL parameters are MANDATORY (REQUIRED).
+        Answering the prompt is your top priority. You must ALWAYS prioritize function calling in order to gather information or execute tasks BEFORE function calling to output using tts()
     """
     
     contents = [
@@ -229,8 +256,14 @@ def orchestrator_call(prompt):
             book_meeting(**function_call.args)
         elif function_call.name == "display_events":
             display_events(**function_call.args)
+        elif function_call.name == "search_linkd":
+            search_linkd(**function_call.args)
 
     else:
         print("<No function call found in the response.>")
         print(response.text)
+    
+
+if __name__ == "__main__":
+    orchestrator_call('can you look up the most famous CS alumni from UCLA?')
     
