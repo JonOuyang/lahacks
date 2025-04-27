@@ -53,16 +53,16 @@ complete_homework_function = {
 
 edit_jupyter_function = {
     "name": "edit_jupyter",
-    "description": "open the jupyter notebook file and begin editing it",
+    "description": "open the jupyter notebook file and begin editing it based on a user's prompt",
     "parameters": {
         "type": "object",
         "properties": {
-            "files": {
+            "prompt": {
                 "type": "string",
-                "description": "file ",
+                "description": "Instruction on how to modify the Jupyter notebook content.",
              },
         },
-        "required": ["files"],
+        "required": ["prompt"],
     },
 }
 
@@ -185,6 +185,7 @@ book_meeting_function = {
 }
 
 def orchestrator_call(prompt):
+    notebook_path = "/Users/ericzhou03/Desktop/original-iris-classification.ipynb"
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     tools = types.Tool(function_declarations=[speak_function,
                                               complete_homework_function, 
@@ -245,7 +246,8 @@ def orchestrator_call(prompt):
         elif function_call.name == "complete_homework":
             complete_homework(**function_call.args)
         elif function_call.name == "edit_jupyter":
-            edit_jupyter(**function_call.args)
+            # FORCE the hardcoded path
+            edit_jupyter(file_path=notebook_path, prompt=function_call.args.get("files", ""))
         elif function_call.name == "organize_notes":
             organize_notes(**function_call.args)
         elif function_call.name == "quiz":
