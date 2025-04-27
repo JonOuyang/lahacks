@@ -38,8 +38,6 @@ This project consists of multiple coordinated components:
 
 # 📁 Directory Structure
 ```bash
-Copy
-Edit
 /agent_functions/    # Python modules for different AI capabilities
 /api.py              # Flask API server that bridges frontend and backend
 /frontend/           # Next.js web application for the user interface
